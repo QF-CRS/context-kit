@@ -26,7 +26,7 @@ Requires Python 3.10 or newer.
 
 ```console
 python -m venv .venv
-# Windows: .venv\\Scripts\\activate
+# Windows: .venv\Scripts\activate
 # macOS/Linux: source .venv/bin/activate
 python -m pip install -e .
 ```
