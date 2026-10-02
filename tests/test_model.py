@@ -52,6 +52,35 @@ class PackTests(unittest.TestCase):
             hashlib.sha256((root / "config.py").read_bytes()).hexdigest(),
         )
 
+    def test_quoted_assignments_with_spaces_are_redacted(self) -> None:
+        root = self.make_repo()
+        source = (
+            'password = "secret value with # marker"\n'
+            "token: 'another secret value'\n"
+        )
+        (root / "settings.ini").write_text(source, encoding="utf-8")
+
+        result = build_pack(PackOptions(root))
+        record = next(record for record in result.files if record.path == "settings.ini")
+
+        self.assertEqual(record.redactions, 2)
+        self.assertNotIn("secret value", record.content)
+        self.assertNotIn("another secret value", record.content)
+        self.assertIn('password = "[REDACTED]"', record.content)
+        self.assertIn("token: '[REDACTED]'", record.content)
+
+    def test_additional_credential_filenames_are_skipped(self) -> None:
+        root = self.make_repo()
+        for name in (".netrc", ".npmrc", ".pypirc", "auth.json", "token.json"):
+            (root / name).write_text("credential=should not be included\n", encoding="utf-8")
+
+        result = build_pack(PackOptions(root))
+        self.assertFalse(result.files)
+        self.assertEqual(
+            {item["path"] for item in result.skipped},
+            {".netrc", ".npmrc", ".pypirc", "auth.json", "token.json"},
+        )
+
     def test_limits_are_reported_and_markdown_handles_backticks(self) -> None:
         root = self.make_repo()
         (root / "large.txt").write_text("x" * 40, encoding="utf-8")

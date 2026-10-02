@@ -40,13 +40,19 @@ SENSITIVE_FILENAMES = frozenset(
         ".env.local",
         ".env.production",
         ".env.development",
+        ".netrc",
+        ".npmrc",
+        ".pypirc",
         "id_rsa",
         "id_dsa",
         "id_ecdsa",
         "id_ed25519",
+        "auth.json",
         "credentials",
         "credentials.json",
+        "service-account.json",
         "secrets.json",
+        "token.json",
     }
 )
 
@@ -63,7 +69,15 @@ _GITHUB_TOKEN_PATTERN = re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b")
 _AWS_KEY_PATTERN = re.compile(r"\bAKIA[0-9A-Z]{16}\b")
 _BEARER_PATTERN = re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]{20,}")
 _ASSIGNMENT_PATTERN = re.compile(
-    r"(?im)^(\s*(?:api[_-]?key|secret|token|password|passwd)\s*[:=]\s*)([\"']?)([^\"'\s#]+)"
+    r"""(?im)^
+    (?P<prefix>\s*(?:api[_-]?key|secret|token|password|passwd)\s*[:=]\s*)
+    (?P<value>
+        '(?:[^'\\\r\n]|\\.)*'
+        |"(?:[^"\\\r\n]|\\.)*"
+        |[^\s#]+
+    )
+    """,
+    re.VERBOSE,
 )
 
 
@@ -214,7 +228,13 @@ def _candidate_paths(root: Path) -> list[Path]:
         if any(part in DEFAULT_IGNORED_DIRS for part in relative.parts):
             continue
         candidates.append(path)
-    return sorted(candidates, key=lambda path: path.relative_to(root).as_posix().lower())
+    return sorted(
+        candidates,
+        key=lambda path: (
+            path.relative_to(root).as_posix().lower(),
+            path.relative_to(root).as_posix(),
+        ),
+    )
 
 
 def _git_ignored(root: Path, paths: Iterable[Path]) -> set[str]:
@@ -257,8 +277,12 @@ def _redact_text(text: str) -> tuple[str, int]:
         count += replaced
 
     def replace_assignment(match: re.Match[str]) -> str:
-        quote = match.group(2)
-        return f"{match.group(1)}{quote}[REDACTED]{quote}"
+        value = match.group("value")
+        if value[:1] in {"'", '"'} and value[-1:] == value[:1]:
+            value = f"{value[:1]}[REDACTED]{value[-1:]}"
+        else:
+            value = "[REDACTED]"
+        return f"{match.group('prefix')}{value}"
 
     text, replaced = _ASSIGNMENT_PATTERN.subn(replace_assignment, text)
     return text, count + replaced
